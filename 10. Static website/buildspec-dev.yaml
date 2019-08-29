@@ -1,0 +1,19 @@
+version: 0.2
+phases:
+  install:
+    runtime-versions:
+      nodejs: 10
+  pre_build:
+    commands:
+      - echo "Installing jq..."
+      - curl -qL -o jq https://stedolan.github.io/jq/download/linux64/jq && chmod +x ./jq
+      - WEBSITE_S3_BUCKET=$(./jq -r '.S3Bucket' $CODEBUILD_SRC_DIR_DistributionOutputArtifact/Distribution.json)
+      - CLOUDFRONT_DISTRIBUTION=$(./jq -r '.CFDistribution' $CODEBUILD_SRC_DIR_DistributionOutputArtifact/Distribution.json)
+  build:
+    commands:
+      - echo Build started on `date`
+      
+  post_build:
+    commands:
+      - aws s3 sync . s3://${WEBSITE_S3_BUCKET}/
+      - aws cloudfront create-invalidation --distribution-id ${CLOUDFRONT_DISTRIBUTION}  --paths /index.html

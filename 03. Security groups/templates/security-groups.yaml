@@ -1,0 +1,120 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >
+  This template creates security groups for ECS and ALB
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Environment configuration
+        Parameters:
+          - Environment
+          - ProjectName
+      - Label:
+          default: VPC configuration
+        Parameters:
+          - VpcId
+          - VpcCidrBlock
+
+Parameters:
+  ProjectName:
+    Type: String
+    Description: Project name, part of the name of all created components
+  
+  Environment:
+    Type: String
+    AllowedValues:
+      - dev
+      - test
+      - prod
+  
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: Id of VPC where security groups should be deployed to
+
+  VpcCidrBlock:
+    AllowedPattern: '((\d{1,3})\.){3}\d{1,3}/\d{1,2}'
+    Type: String
+ 
+
+Resources:
+  DbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group to access db 
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - CidrIp: !Ref VpcCidrBlock
+          FromPort: 3306
+          ToPort: 3306
+          IpProtocol: TCP
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-${Environment}-sg-db
+        - Key: Environment
+          Value: !Ref Environment
+
+  ECSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group to access ECS
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+      - CidrIp: 0.0.0.0/0
+        FromPort: 22
+        ToPort: 22
+        IpProtocol: TCP
+      - SourceSecurityGroupId: !Ref ALBSecurityGroup
+        IpProtocol: '-1'
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-${Environment}-sg-ecs
+        - Key: Environment
+          Value: !Ref Environment
+    
+
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref VpcId
+      GroupDescription: Security group to access the load balancer
+      SecurityGroupIngress:
+        - CidrIp: 0.0.0.0/0
+          IpProtocol: '-1'
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-${Environment}-sg-alb
+
+
+  BastionSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security Group for the public SSH access
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+      - CidrIp: 0.0.0.0/0
+        FromPort: 22
+        ToPort: 22
+        IpProtocol: TCP
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-${Environment}-sg-bastion
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  ECSSecurityGroup:
+    Description: ECS security group
+    Value: !Ref ECSSecurityGroup
+
+  ALBSecurityGroup:
+    Description: ALB security group
+    Value: !Ref ALBSecurityGroup
+
+  DbSecurityGroup:
+    Description: DB security group
+    Value: !Ref DbSecurityGroup
+
+  BastionSecurityGroup:
+    Description: Bastion host security group
+    Value: !Ref BastionSecurityGroup

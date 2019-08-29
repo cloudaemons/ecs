@@ -1,0 +1,33 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >
+  This template creates repository for CD
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Environment configuration
+        Parameters:
+          - RepositoryName
+     
+Parameters:
+  RepositoryName:
+    Type: String
+    Description: Repository name
+    Default: aws-training
+ 
+Resources:
+  CodeCommitRepository:
+   Type: AWS::CodeCommit::Repository
+   Properties:
+     RepositoryName: !Ref RepositoryName
+     RepositoryDescription: CodeCommit for automated tests
+ 
+Outputs:
+  CloneUrlHttp:
+    Description:  URL to use for cloning the repository over HTTPS.
+    Value: !GetAtt CodeCommitRepository.CloneUrlHttp
+
+  CloneUrlSsh:
+    Description: URL to use for cloning the repository over SSH
+    Value: !GetAtt CodeCommitRepository.CloneUrlSsh

@@ -1,0 +1,23 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >
+  This is boilerplate template
+     
+Parameters:
+  ProjectName:
+    Type: String
+    Description: Project name, part of the name of all created components
+  
+  Environment:
+    Type: String
+    AllowedValues:
+      - dev
+      - test
+      - prod
+  
+  ### PUT PARAMETERS HERE
+  
+Resources:
+  ### PUT RESOURCES HERE
+
+Outputs:
+  ### PUT OUTPUTS HERE

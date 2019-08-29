@@ -1,0 +1,284 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >
+  This template creates a Virtual Private Cloud, two private subnets and two public subnets,
+  an Internet Gateway, pair of NAT Gateways (one in each AZ), and routes
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Environment configuration
+        Parameters:
+          - Environment
+          - ProjectName
+      - Label:
+          default: VPC configuration
+        Parameters:
+          - CidrBlock
+          - AvailabilityZoneOne
+          - AvailabilityZoneTwo
+          - PublicSubnetOne
+          - PublicSubnetTwo
+          - PrivateSubnetOne
+          - PrivateSubnetTwo
+
+Parameters:
+  ProjectName:
+    Type: String
+    Description: Project name, part of the name of all created components
+  
+  Environment:
+    Type: String
+    AllowedValues:
+      - dev
+      - test
+      - prod
+  
+  CidrBlock:
+    Default: 10.0.0.0/16
+    Description: VPC CIDR Block (eg 10.0.0.0/16)
+    Type: String
+  
+  AvailabilityZoneOne:
+    Description: The AvailabilityZoneA to use for the subnet
+    Type: AWS::EC2::AvailabilityZone::Name
+  
+  AvailabilityZoneTwo:
+    Description: The AvailabilityZoneB to use for the subnet
+    Type: AWS::EC2::AvailabilityZone::Name
+  
+  PublicSubnetOne:
+    Default: 10.0.0.1/18
+    Description: VPC CIDR Block for the Public Subnet (eg 10.0.0.0/24)
+    Type: String
+  
+  PublicSubnetTwo:
+    Default: 10.0.64.1/18
+    Description: VPC CIDR Block for the Public Subnet (eg 10.0.0.0/24)
+    Type: String
+  
+  PrivateSubnetOne:
+    Default: 10.0.128.1/18
+    Description: VPC CIDR Block for the Private Subnet A (eg 10.0.1.0/24)
+    Type: String
+  
+  PrivateSubnetTwo:
+    Default: 10.0.192.1/18
+    Description: VPC CIDR Block for the Private Subnet B (eg 10.0.3.0/24)
+    Type: String
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref CidrBlock
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-${Environment}-vpc
+        - Key: Environment
+          Value: !Ref Environment
+
+  ############################## PUBLIC
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+      - Key: Name
+        Value: !Sub ${ProjectName}-${Environment}-internet-gateway
+      - Key: Environment
+        Value: !Ref Environment
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-${Environment}-public-route-table
+        - Key: Environment
+          Value: !Ref Environment
+      VpcId: !Ref VPC
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+      RouteTableId: !Ref PublicRouteTable
+
+  PubSubnetOne:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Ref AvailabilityZoneOne
+      CidrBlock: !Ref PublicSubnetOne
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-${Environment}-public-subnet-one
+        - Key: Environment
+          Value: !Ref Environment
+      VpcId: !Ref VPC
+
+  PubSubnetTwo:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Ref AvailabilityZoneTwo
+      CidrBlock: !Ref PublicSubnetTwo
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-${Environment}-public-subnet-two
+        - Key: Environment
+          Value: !Ref Environment
+      VpcId: !Ref VPC
+
+  PubSubnetOneRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PubSubnetOne
+      RouteTableId: !Ref PublicRouteTable
+
+  PubSubnetTwoRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PubSubnetTwo
+      RouteTableId: !Ref PublicRouteTable
+
+  ############################## PRIVATE
+
+  PrivSubnetOne:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Ref AvailabilityZoneOne
+      CidrBlock: !Ref PrivateSubnetOne
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-${Environment}-private-subnet-one
+        - Key: Environment
+          Value: !Ref Environment
+
+  PrivSubnetTwo:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Ref AvailabilityZoneTwo
+      CidrBlock: !Ref PrivateSubnetTwo
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-${Environment}-private-subnet-two
+        - Key: Environment
+          Value: !Ref Environment
+
+  PrivateRouteTableOne:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-${Environment}-private-route-table-one
+        - Key: Environment
+          Value: !Ref Environment
+
+  PrivateRouteTableTwo:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-${Environment}-private-route-table-two
+        - Key: Environment
+          Value: !Ref Environment
+
+  PrivSubnetOneRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivSubnetOne
+      RouteTableId: !Ref PrivateRouteTableOne
+
+  PrivSubnetTwoRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivSubnetTwo
+      RouteTableId: !Ref PrivateRouteTableTwo
+
+  NatGatewayOne:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatEIPOne.AllocationId
+      SubnetId: !Ref PubSubnetOne
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-${Environment}-nat-gateway-one
+        - Key: Environment
+          Value: !Ref Environment
+
+  NatGatewayTwo:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatEIPTwo.AllocationId
+      SubnetId: !Ref PubSubnetTwo
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-${Environment}-nat-gateway-one
+        - Key: Environment
+          Value: !Ref Environment
+
+  NatEIPOne:
+    Type: AWS::EC2::EIP
+    DeletionPolicy : Retain
+    Properties:
+      Domain: vpc
+
+  NatEIPTwo:
+    Type: AWS::EC2::EIP
+    DeletionPolicy : Retain
+    Properties:
+      Domain: vpc
+
+  NatRouteOne:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableOne
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGatewayOne
+
+  NatRouteTwo:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTableTwo
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGatewayTwo
+
+
+Outputs:
+  VpcId:
+    Description: VPC ID
+    Value: !Ref VPC
+  VpcCidrBlock:
+    Description: Vpc cidr block
+    Value: !Ref CidrBlock
+
+  PublicSubnetOneId:
+    Description: Public Subnet 1 ID
+    Value: !Ref PubSubnetOne
+  PublicSubnetTwoId:
+    Description: Public Subnet 2 ID
+    Value: !Ref PubSubnetTwo
+
+  PrivateSubnetOneId:
+    Description: Private Subnet 1 ID
+    Value: !Ref PrivSubnetOne
+  PrivateSubnetTwoId:
+    Description: Private Subnet 2 ID
+    Value: !Ref PrivSubnetTwo
+
+
+    

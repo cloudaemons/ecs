@@ -1,0 +1,64 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >
+  This template creates an bastion host to access resources in private subnets
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Environment configuration
+        Parameters:
+          - ProjectName
+          - Environment
+      - Label:
+          default: Bastion configuration
+        Parameters:
+          - BastionInstanceType
+          - BastionSshSecurityGroupId
+     
+Parameters:
+  ProjectName:
+    Type: String
+  Environment:
+    Type: String
+    AllowedValues:
+      - dev
+      - test
+      - prod
+  BastionInstanceType:
+    Type: String
+    Default: t3.micro
+  BastionSshSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+  PublicSubnetId:
+    Type: AWS::EC2::Subnet::Id
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+
+Resources:
+  Bastion:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !Ref BastionInstanceType
+      ImageId: ami-0d8e27447ec2c8410
+      SubnetId: !Ref PublicSubnetId
+      SecurityGroupIds:
+      - !Ref BastionSshSecurityGroupId
+      KeyName: !Ref KeyName
+      Monitoring: false
+      DisableApiTermination: false
+      Tags:
+      - Key: Name
+        Value: !Sub ${ProjectName}-${Environment}-bastion
+      - Key: Environment
+        Value: !Ref Environment
+      UserData:
+        !Base64 |
+          #!/bin/bash -ex
+          yum -y install mysql
+
+Outputs:
+  BastionAddress:
+    Description: EC2 Bastion address
+    Value: !GetAtt Bastion.PublicDnsName
+

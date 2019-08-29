@@ -1,0 +1,108 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >
+  This template creates  public load balancer, hosted in public subnets that is accessible
+  to the public, and is intended to route traffic to  or more public facing services
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Environment configuration
+        Parameters:
+          - Environment
+          - ProjectName
+      - Label:
+          default: VPC configuration
+        Parameters:
+          - VpcId
+          - Subnets
+      - Label:
+          default: Security groups
+        Parameters:
+          - ALBSecurityGroup
+
+Parameters:
+  ProjectName:
+    Type: String
+    Description: Project name, part of the name of all created compnts
+  
+  Environment:
+    Type: String
+    AllowedValues:
+      - dev
+      - test
+      - prod
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: Id of VPC where security groups should be deployed to
+
+  Subnets:
+    Description: Subnets where Application Load Balancer should be deployed to
+    Type: List<AWS::EC2::Subnet::Id>
+
+  ALBSecurityGroup:
+    Description: Select the Security Group to apply to the Application Load Balancer
+    Type: AWS::EC2::SecurityGroup::Id
+
+Resources:
+  TargetGroupService:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref VpcId
+      TargetType: ip
+      Port: 8080
+      Protocol: HTTP
+      HealthCheckIntervalSeconds: 6
+
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub ${ProjectName}-${Environment}-alb
+      Scheme: internet-facing
+      Subnets: !Ref Subnets
+      SecurityGroups:
+        - !Ref ALBSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Ref ALBSecurityGroup
+
+  LoadBalancerListenerService:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 8080
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroupService
+
+  ListenerRuleService:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !Ref LoadBalancerListenerService
+      Priority: 1
+      Conditions:
+        - Field: path-pattern
+          Values:
+            - /
+      Actions:
+        - TargetGroupArn: !Ref TargetGroupService
+          Type: forward
+   
+Outputs:
+  LoadBalancer:
+    Description: A reference to the Application Load Balancer
+    Value: !Ref LoadBalancer
+
+  LoadBalancerUrl:
+    Description: The URL of the ALB
+    Value: !GetAtt LoadBalancer.DNSName
+
+  LoadBalancerListenerService:
+    Description: A reference to a port 80 listener
+    Value: !Ref LoadBalancerListenerService
+
+  TargetGroupService:
+    Description: A reference to a target group 
+    Value: !Ref TargetGroupService

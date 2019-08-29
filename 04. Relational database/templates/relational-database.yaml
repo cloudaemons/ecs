@@ -1,0 +1,68 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >
+  This template creates an Aurora serverless
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Rds configuration
+        Parameters:
+          - RDSUsername
+          - RDSPassword
+          - RDSDatabaseName
+          - RDSSecurityGroup
+          - RDSBackupRetentionPeriod
+          - PrivateSubnetIds
+
+Parameters:
+  RDSUsername:
+    Type: String
+    NoEcho: true
+  RDSPassword:
+    Type: String
+    MinLength: 8
+    NoEcho: true
+  RDSDatabaseName:
+    Type: String
+  RDSBackupRetentionPeriod:
+    Type: Number
+  RDSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup::Id
+  PrivateSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+  
+Resources:
+ 
+  RDSCluster:
+    Type: AWS::RDS::DBCluster
+    Properties:
+      Engine: aurora
+      EngineMode: serverless
+      EngineVersion: '5.6'
+      DatabaseName: !Ref RDSDatabaseName
+      MasterUsername: !Ref RDSUsername
+      MasterUserPassword: !Ref RDSPassword
+      BackupRetentionPeriod: !Ref RDSBackupRetentionPeriod
+      DBSubnetGroupName: !Ref RDSSubnetGroup
+      VpcSecurityGroupIds:
+        - !Ref RDSSecurityGroup
+
+  RDSSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnet for the RDS Cluster
+      SubnetIds: !Ref PrivateSubnetIds
+
+
+Outputs:
+  DbClusterAddress:
+    Description: Cluster address
+    Value: !GetAtt RDSCluster.Endpoint.Address
+  DbClusterPort:
+    Description: Cluster port
+    Value: !GetAtt RDSCluster.Endpoint.Port
+  DbName:
+    Description: Database name
+    Value: !Ref RDSDatabaseName
+

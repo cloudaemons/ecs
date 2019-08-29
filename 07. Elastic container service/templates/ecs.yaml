@@ -1,0 +1,331 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >
+  This template creates ecs cluster, task defintions and services
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Environment configuration
+        Parameters:
+          - ProjectName
+          - Environment
+      - Label:
+          default: Ecs configuration
+        Parameters:
+          - FargateMemory
+          - FargateCpu
+      - Label:
+          default: Network configuration
+        Parameters:
+          - SecurityGroupIds
+          - SubnetIds
+      - Label:
+          default: Microservice 
+        Parameters:
+          - DockerImageTag
+          - ContainerPort
+          - TargetGroup
+      - Label:
+          default: Database 
+        Parameters:
+          - DbHost
+          - DbPassword
+          - DbUser
+
+Parameters:
+  ProjectName:
+    Type: String
+    Description: Project name, part of the name of all created compnts
+  
+  Environment:
+    Type: String
+    AllowedValues:
+      - dev
+      - test
+      - prod
+
+  FargateMemory:
+    Type: Number
+    Default: 2048
+    Description: Memory allocated for Fargate container
+  
+  FargateCpu:
+    Type: Number
+    Default: 1024
+    Description: CPU allocated for Fargate container
+
+  DockerImageTag:
+    Type: String
+    Description: Tagged Docker image with service eg. 646407006236.dkr.ecr.eu-west-2.amazonaws.com/at-ec-ecrre-f3jbzhkvj0v2:08e93017	
+
+  ContainerPort:
+    Type: Number
+    Default: 8080
+
+  TargetGroup:
+    Type: String 
+    Description: Target Group of elastic load balancer eg arn:aws:elasticloadbalancing:eu-west-2:646407006236:targetgroup/at-al-Targe-EARD4LNK4OG5/b554828371f74e40	
+  
+  DbHost:
+    Type: String
+    Description: DB Host eg. work-db-rdscluster-1iu38wydzmyou.cluster-cvmpmgfoj5hk.eu-west-2.rds.amazonaws.com	
+  
+  DbPassword:
+    Type: String
+    NoEcho: true
+  
+  DbUser:
+    Type: String
+    NoEcho: true
+
+  SecurityGroupIds:
+    Type: List<AWS::EC2::SecurityGroup::Id>
+  
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Subnets for ECS, should be in private subnet behind NAT
+
+Resources:
+  EcsCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub ${ProjectName}-${Environment}-cluster
+
+  EcrRepository:
+    Type: AWS::ECR::Repository
+    DeletionPolicy: Retain
+
+  TaskRole: 
+    Type: AWS::IAM::Role
+    Properties: 
+      AssumeRolePolicyDocument: 
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRole
+            Principal:
+              Service:
+                - ecs-tasks.amazonaws.com
+      Policies:
+        - PolicyName: !Sub ${ProjectName}-${Environment}-ecs-policy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Resource: '*'
+                Effect: Allow
+                Action: 's3:*'
+      Path: /
+
+  TaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRole
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazoneCSTaskExecutionRolePolicy
+      Path: /
+
+  ### MICROSERVICE 
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub ${ProjectName}-${Environment}-microservice
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
+      Memory: !Ref FargateMemory
+      Cpu: !Ref FargateCpu
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      ContainerDefinitions:
+        - Name: !Sub ${ProjectName}-${Environment}-microservice
+          Memory: !Ref FargateMemory
+          Cpu: !Ref FargateCpu
+          Image: !Ref DockerImageTag
+          Environment:
+            - Name: ENVIRONMENT
+              Value: !Ref Environment
+            - Name: PORT
+              Value: !Ref ContainerPort
+            - Name: HOST
+              Value: !Ref DbHost
+            - Name: USER
+              Value: !Ref DbUser
+            - Name: PASSWORD
+              Value: !Ref DbPassword
+
+          PortMappings:
+            - ContainerPort: !Ref ContainerPort
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref CloudWatchLogsGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: !Ref AWS::StackName
+
+  CloudWatchLogsGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub ${ProjectName}-${Environment}-microservice
+      RetentionInDays: 7
+  
+  EcsService:
+    Type: AWS::ECS::Service
+    Properties: 
+      Cluster: !Ref EcsCluster
+      ServiceName: !Sub ${ProjectName}-${Environment}-microservice
+      LaunchType: FARGATE
+      TaskDefinition: !Ref TaskDefinition
+      DesiredCount: 2
+      DeploymentConfiguration:
+        MaximumPercent: 100
+        MinimumHealthyPercent: 0
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          SecurityGroups: !Ref SecurityGroupIds
+          Subnets: !Ref SubnetIds
+      LoadBalancers:
+        - ContainerName: !Sub ${ProjectName}-${Environment}-microservice
+          ContainerPort: !Ref ContainerPort
+          TargetGroupArn: !Ref TargetGroup
+
+
+  AutoScalingRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+              - application-autoscaling.amazonaws.com
+          Action: 
+            - sts:AssumeRole
+      Path: /
+      Policies:
+      - PolicyName: service-autoscaling
+        PolicyDocument:
+          Statement:
+          - Effect: Allow
+            Action: 
+              - application-autoscaling:*
+              - cloudwatch:DescribeAlarms
+              - cloudwatch:PutMetricAlarm
+              - ecs:DescribeServices
+              - ecs:UpdateService
+            Resource: "*"
+
+
+  # Enable autoscaling for the service
+  ScalableTarget:
+    Type: AWS::ApplicationAutoScaling::ScalableTarget
+    Properties:
+      ServiceNamespace: ecs
+      MaxCapacity: 10
+      MinCapacity: 2
+      ScalableDimension: ecs:service:DesiredCount
+      ResourceId:
+        !Join
+          - '/'
+          - - service
+            - !Ref EcsCluster
+            - !GetAtt EcsService.Name
+      RoleARN: !GetAtt AutoScalingRole.Arn
+
+  # Create scaling policies that describe how to scale the service up and down.
+  ScaleDownPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    DependsOn: ScalableTarget
+    Properties:
+      PolicyName: !Sub ${ProjectName}-${Environment}-scale-down
+      PolicyType: StepScaling
+      ResourceId:
+        Fn::Join:
+          - '/'
+          - - service
+            - !Ref EcsCluster
+            - !GetAtt EcsService.Name
+      ScalableDimension: ecs:service:DesiredCount
+      ServiceNamespace: ecs
+      StepScalingPolicyConfiguration:
+        AdjustmentType: ChangeInCapacity
+        StepAdjustments:
+          - MetricIntervalUpperBound: 0
+            ScalingAdjustment: -1
+        MetricAggregationType: Average
+        Cooldown: 60
+
+  ScaleUpPolicy:
+    Type: AWS::ApplicationAutoScaling::ScalingPolicy
+    DependsOn: ScalableTarget
+    Properties:
+      PolicyName: !Sub ${ProjectName}-${Environment}-scale-up
+      PolicyType: StepScaling
+      ResourceId:
+        Fn::Join:
+          - '/'
+          - - service
+            - !Ref EcsCluster
+            - !GetAtt EcsService.Name
+      ScalableDimension: ecs:service:DesiredCount
+      ServiceNamespace: ecs
+      StepScalingPolicyConfiguration:
+        AdjustmentType: ChangeInCapacity
+        StepAdjustments:
+          - MetricIntervalLowerBound: 0
+            MetricIntervalUpperBound: 15
+            ScalingAdjustment: 1
+          - MetricIntervalLowerBound: 15
+            MetricIntervalUpperBound: 25
+            ScalingAdjustment: 2
+          - MetricIntervalLowerBound: 25
+            ScalingAdjustment: 3
+        MetricAggregationType: Average
+        Cooldown: 60
+
+  # Create alarms to trigger the scaling policies
+  LowMemoryUsageAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${ProjectName}-${Environment}-low-memory
+      AlarmDescription: !Sub Low memory utilization for service ${EcsService} in environment ${Environment}
+      MetricName: MemoryUtilization
+      Namespace: AWS/ECS
+      Dimensions:
+        - Name: ServiceName
+          Value: !GetAtt EcsService.Name
+        - Name: ClusterName
+          Value: !Ref EcsCluster
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 20
+      ComparisonOperator: LessThanOrEqualToThreshold
+      AlarmActions:
+        - !Ref ScaleDownPolicy
+
+  HighMemoryUsageAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${ProjectName}-${Environment}-high-memory
+      AlarmDescription: !Sub High memory utilization for service ${EcsService} in environment ${Environment}
+      MetricName: MemoryUtilization
+      Namespace: AWS/ECS
+      Dimensions:
+        - Name: ServiceName
+          Value: !GetAtt EcsService.Name
+        - Name: ClusterName
+          Value: !Ref EcsCluster
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 70
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      AlarmActions:
+        - !Ref ScaleUpPolicy
