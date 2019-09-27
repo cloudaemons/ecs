@@ -16,4 +16,4 @@ AWS Cloud9 is a cloud-based integrated development environment (IDE) that lets y
 
 Clone the repository to your **Cloud9** environment and start working on code. Run the following command:
 
-    git clone https://github.com/cloudaemons/handson
+    git clone https://github.com/cloudaemons/ecs
